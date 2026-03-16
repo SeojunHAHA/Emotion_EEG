@@ -1,5 +1,5 @@
 data:
-  root: "/run/user/1000/gvfs/sftp:host=10.130.4.175,port=50022,user=seojun/Dataset/seojun/SEED"
+  root: "/home/seojun/Desktop/Dataset/SEED"
   num_classes: 3  # 0: negative, 1: neutral, 2: positive
 
 model:
@@ -11,7 +11,7 @@ model:
 train:
   seed: 42
   device: "cuda"
-  batch_size: 32
+  batch_size: 16
   num_workers: 4
 
   # Stage 1: Linear Probing

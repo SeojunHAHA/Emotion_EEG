@@ -16,7 +16,7 @@ class REVEClassifier(nn.Module):
             trust_remote_code=True
         )
 
-        encoder_dim = self.encoder.config.hidden_size
+        encoder_dim = self.encoder.config.embed_dim
         self.classifier = nn.Sequential(
             nn.Linear(encoder_dim, cfg.model.hidden_dim),
             nn.GELU(),
@@ -25,9 +25,19 @@ class REVEClassifier(nn.Module):
         )
 
         self.ch_names = None
+        self.valid_ch_idx = None
 
     def set_channel_info(self, ch_names):
-        self.ch_names = ch_names
+        # pos_bank에 있는 채널만 필터링
+        valid_names = []
+        valid_idx = []
+        for i, ch in enumerate(ch_names):
+            if ch in self.pos_bank.mapping:
+                valid_names.append(ch)
+                valid_idx.append(i)
+        self.ch_names = valid_names
+        self.valid_ch_idx = valid_idx
+        print(f"Using {len(valid_names)}/{len(ch_names)} channels")
 
     def freeze_encoder(self):
         for param in self.encoder.parameters():
@@ -55,8 +65,9 @@ class REVEClassifier(nn.Module):
         Returns:
             logits: (batch, num_classes)
         """
-        positions = self.pos_bank(self.ch_names)                    # (62, 3)
-        positions = positions.expand(x.size(0), -1, -1)             # (batch, 62, 3)
-        outputs = self.encoder(x, positions)
-        hidden = outputs.last_hidden_state[:, 0, :]                 # CLS token
+        x = x[:, self.valid_ch_idx, :]                              # (batch, valid_ch, time)
+        positions = self.pos_bank(self.ch_names)                    # (valid_ch, 3)
+        positions = positions.expand(x.size(0), -1, -1)             # (batch, valid_ch, 3)
+        layer_outputs = self.encoder(x, positions, return_output=True)  # list of (batch, ch*patches, embed_dim)
+        hidden = layer_outputs[-1].mean(dim=1)                         # 마지막 레이어 mean pooling → (batch, embed_dim)
         return self.classifier(hidden)
