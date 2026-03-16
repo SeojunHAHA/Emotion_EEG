@@ -1,0 +1,40 @@
+data:
+  root: "/run/user/1000/gvfs/sftp:host=10.130.4.175,port=50022,user=seojun/Dataset/seojun/SEED"
+  num_classes: 3  # 0: negative, 1: neutral, 2: positive
+
+model:
+  pretrained: "brain-bzh/reve-base"
+  positions: "brain-bzh/reve-positions"
+  hidden_dim: 256
+  dropout: 0.1
+
+train:
+  seed: 42
+  device: "cuda"
+  batch_size: 32
+  num_workers: 4
+
+  # Stage 1: Linear Probing
+  linear_probe:
+    epochs: 10
+    lr: 1.0e-3
+    weight_decay: 1.0e-4
+
+  # Stage 2: Full Fine-tuning (LoRA)
+  fine_tuning:
+    epochs: 30
+    lr: 1.0e-4
+    weight_decay: 1.0e-4
+    lora_r: 8
+    lora_alpha: 16
+    lora_dropout: 0.1
+
+  scheduler: "cosine"
+  warmup_epochs: 3
+
+eval:
+  protocol: "cross_subject"
+
+logging:
+  log_dir: "logs"
+  save_dir: "checkpoints"
