@@ -61,6 +61,32 @@ def load_seed_file_paths(root):
     return subject_data
 
 
+def get_intra_split(file_paths, adapt_ratio=0.05, seed=42):
+    """
+    test subject 데이터를 adapt (5%) / eval (95%) 로 stratified split
+
+    Returns:
+        (adapt_dataset, eval_dataset)
+    """
+    import random
+    from collections import defaultdict
+
+    rng = random.Random(seed)
+    by_label = defaultdict(list)
+    for p in file_paths:
+        label = os.path.basename(os.path.dirname(p))  # '0', '1', '2'
+        by_label[label].append(p)
+
+    adapt_paths, eval_paths = [], []
+    for paths in by_label.values():
+        rng.shuffle(paths)
+        n_adapt = max(1, int(len(paths) * adapt_ratio))
+        adapt_paths.extend(paths[:n_adapt])
+        eval_paths.extend(paths[n_adapt:])
+
+    return SEEDDataset(adapt_paths), SEEDDataset(eval_paths)
+
+
 def get_cross_subject_splits(subject_data):
     """
     Leave-one-subject-out cross-subject split

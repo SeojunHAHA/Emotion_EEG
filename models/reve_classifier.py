@@ -52,7 +52,7 @@ class REVEClassifier(nn.Module):
             r=lora_cfg.lora_r,
             lora_alpha=lora_cfg.lora_alpha,
             lora_dropout=lora_cfg.lora_dropout,
-            target_modules=["query", "value"],
+            target_modules=["to_qkv", "to_out"],
             bias="none"
         )
         self.encoder = get_peft_model(self.encoder, config)

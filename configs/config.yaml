@@ -1,5 +1,5 @@
 data:
-  root: "/home/seojun/Desktop/Dataset/SEED"
+  root: "/home/seojun/Datasets/SEED"
   num_classes: 3  # 0: negative, 1: neutral, 2: positive
 
 model:
@@ -28,6 +28,13 @@ train:
     lora_r: 8
     lora_alpha: 16
     lora_dropout: 0.1
+
+  # Stage 3: Intra-subject adaptation
+  intra_adaptation:
+    adapt_ratio: 0.05
+    epochs: 10
+    lr: 1.0e-3
+    weight_decay: 1.0e-4
 
   scheduler: "cosine"
   warmup_epochs: 3
