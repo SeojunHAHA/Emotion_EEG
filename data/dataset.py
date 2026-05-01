@@ -53,7 +53,7 @@ def load_seed_file_paths(root):
             label_dir = os.path.join(folder_path, label)
             if not os.path.isdir(label_dir):
                 continue
-            for fname in os.listdir(label_dir):
+            for fname in sorted(os.listdir(label_dir)):
                 if fname.endswith('.pkl'):
                     path = os.path.join(label_dir, fname)
                     subject_data.setdefault(subject_id, []).append(path)
@@ -61,9 +61,9 @@ def load_seed_file_paths(root):
     return subject_data
 
 
-def get_intra_split(file_paths, adapt_ratio=0.05, seed=42):
+def get_intra_split(file_paths, adapt_ratio=0.80, seed=42):
     """
-    test subject 데이터를 adapt (5%) / eval (95%) 로 stratified split
+    test subject 데이터를 adapt / eval 로 stratified split
 
     Returns:
         (adapt_dataset, eval_dataset)

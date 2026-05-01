@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR
 from sklearn.metrics import f1_score
 
 from utils import set_seed, load_config, get_logger, save_checkpoint
@@ -91,7 +91,10 @@ def run_stage(stage_name, model, train_loader, test_loader,
             mixup_alpha=mixup_alpha, num_classes=num_classes
         )
         test_loss, test_acc, test_f1 = evaluate(model, test_loader, criterion, device)
-        scheduler.step(test_loss)
+        if isinstance(scheduler, ReduceLROnPlateau):
+            scheduler.step(test_loss)
+        else:
+            scheduler.step()
 
         is_best = not best_metrics or test_acc > best_metrics["test_acc"]
         if is_best:

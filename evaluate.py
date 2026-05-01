@@ -36,7 +36,7 @@ def main():
     all_accs = []
 
     for _, test_dataset, test_subject in get_cross_subject_splits(subject_data):
-        ckpt_path = f"{cfg.logging.save_dir}/subject_{test_subject}/best_fine_tuning.pt"
+        ckpt_path = f"{cfg.logging.save_dir}/subject_{test_subject}/final.pt"
         test_loader = DataLoader(test_dataset, batch_size=cfg.train.batch_size,
                                  shuffle=False, num_workers=cfg.train.num_workers)
 
