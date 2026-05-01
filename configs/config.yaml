@@ -16,25 +16,28 @@ train:
 
   # Stage 1: Linear Probing
   linear_probe:
-    epochs: 10
+    epochs: 5
     lr: 1.0e-3
     weight_decay: 1.0e-4
+    mixup_alpha: 0.2
 
   # Stage 2: Full Fine-tuning (LoRA)
   fine_tuning:
-    epochs: 30
+    epochs: 15
     lr: 1.0e-4
     weight_decay: 1.0e-4
     lora_r: 8
     lora_alpha: 16
     lora_dropout: 0.1
+    mixup_alpha: 0.2
 
   # Stage 3: Intra-subject adaptation
   intra_adaptation:
-    adapt_ratio: 0.05
-    epochs: 10
+    adapt_ratio: 0.80
+    epochs: 5
     lr: 1.0e-3
     weight_decay: 1.0e-4
+    mixup_alpha: 0.0  # adapt 데이터가 너무 적어서 mixup 비활성화
 
   scheduler: "cosine"
   warmup_epochs: 3

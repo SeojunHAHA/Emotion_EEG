@@ -3,9 +3,10 @@ import json
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.metrics import f1_score
 
 from utils import set_seed, load_config, get_logger, save_checkpoint
@@ -13,20 +14,44 @@ from data.dataset import load_seed_file_paths, get_cross_subject_splits, get_int
 from models.reve_classifier import REVEClassifier
 
 
-def train_one_epoch(model, loader, optimizer, criterion, device):
+def mixup_batch(eeg, labels, alpha, num_classes):
+    """Returns mixed (eeg, soft_labels) and original labels for accuracy tracking."""
+    lam = np.random.beta(alpha, alpha)
+    batch_size = eeg.size(0)
+    idx = torch.randperm(batch_size, device=eeg.device)
+
+    mixed_eeg = lam * eeg + (1 - lam) * eeg[idx]
+    y_a = F.one_hot(labels, num_classes).float()
+    y_b = F.one_hot(labels[idx], num_classes).float()
+    soft_labels = lam * y_a + (1 - lam) * y_b
+    return mixed_eeg, soft_labels, labels, labels[idx], lam
+
+
+def train_one_epoch(model, loader, optimizer, criterion, device, mixup_alpha=0.0, num_classes=3):
     model.train()
     total_loss, correct, total = 0.0, 0, 0
+    use_mixup = mixup_alpha > 0.0
 
     for eeg, labels in loader:
         eeg, labels = eeg.to(device), labels.to(device)
         optimizer.zero_grad()
-        logits = model(eeg)
-        loss = criterion(logits, labels)
+
+        if use_mixup:
+            mixed_eeg, soft_labels, y_a, y_b, lam = mixup_batch(eeg, labels, mixup_alpha, num_classes)
+            logits = model(mixed_eeg)
+            # soft cross-entropy: sum over classes, mean over batch
+            loss = -(soft_labels * F.log_softmax(logits, dim=1)).sum(dim=1).mean()
+            preds = logits.argmax(dim=1)
+            correct += (lam * (preds == y_a).float() + (1 - lam) * (preds == y_b).float()).sum().item()
+        else:
+            logits = model(eeg)
+            loss = criterion(logits, labels)
+            correct += (logits.argmax(dim=1) == labels).sum().item()
+
         loss.backward()
         optimizer.step()
 
         total_loss += loss.item() * len(labels)
-        correct += (logits.argmax(dim=1) == labels).sum().item()
         total += len(labels)
 
     return total_loss / total, correct / total
@@ -56,13 +81,17 @@ def evaluate(model, loader, criterion, device):
 
 
 def run_stage(stage_name, model, train_loader, test_loader,
-              optimizer, scheduler, criterion, stage_cfg, device, logger):
+              optimizer, scheduler, criterion, stage_cfg, device, logger, num_classes=3):
     best_metrics = {}
+    mixup_alpha = getattr(stage_cfg, "mixup_alpha", 0.0)
 
     for epoch in range(stage_cfg.epochs):
-        train_loss, train_acc = train_one_epoch(model, train_loader, optimizer, criterion, device)
+        train_loss, train_acc = train_one_epoch(
+            model, train_loader, optimizer, criterion, device,
+            mixup_alpha=mixup_alpha, num_classes=num_classes
+        )
         test_loss, test_acc, test_f1 = evaluate(model, test_loader, criterion, device)
-        scheduler.step()
+        scheduler.step(test_loss)
 
         is_best = not best_metrics or test_acc > best_metrics["test_acc"]
         if is_best:
@@ -127,9 +156,10 @@ def main():
         optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()),
                           lr=cfg.train.linear_probe.lr,
                           weight_decay=cfg.train.linear_probe.weight_decay)
-        scheduler = CosineAnnealingLR(optimizer, T_max=cfg.train.linear_probe.epochs)
+        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
         lp_metrics = run_stage("linear_probe", model, train_loader, test_loader,
-                               optimizer, scheduler, criterion, cfg.train.linear_probe, device, logger)
+                               optimizer, scheduler, criterion, cfg.train.linear_probe, device, logger,
+                               num_classes=cfg.data.num_classes)
 
         # Stage 2: Full Fine-tuning with LoRA
         logger.info("Stage 2: Fine-tuning with LoRA")
@@ -138,9 +168,10 @@ def main():
         optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()),
                           lr=cfg.train.fine_tuning.lr,
                           weight_decay=cfg.train.fine_tuning.weight_decay)
-        scheduler = CosineAnnealingLR(optimizer, T_max=cfg.train.fine_tuning.epochs)
+        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
         ft_metrics = run_stage("fine_tuning", model, train_loader, test_loader,
-                               optimizer, scheduler, criterion, cfg.train.fine_tuning, device, logger)
+                               optimizer, scheduler, criterion, cfg.train.fine_tuning, device, logger,
+                               num_classes=cfg.data.num_classes)
 
         # Stage 3: Intra-subject adaptation (5% adapt / 95% eval, classifier head only)
         logger.info("Stage 3: Intra-subject adaptation")
@@ -159,7 +190,8 @@ def main():
                           weight_decay=intra_cfg.weight_decay)
         scheduler = CosineAnnealingLR(optimizer, T_max=intra_cfg.epochs)
         intra_metrics = run_stage("intra_adaptation", model, adapt_loader, intra_eval_loader,
-                                  optimizer, scheduler, criterion, intra_cfg, device, logger)
+                                  optimizer, scheduler, criterion, intra_cfg, device, logger,
+                                  num_classes=cfg.data.num_classes)
 
         # Save model checkpoint for this subject
         ckpt_path = os.path.join(save_dir, "final.pt")
